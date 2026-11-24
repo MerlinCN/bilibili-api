@@ -1240,6 +1240,199 @@ def parse_online_rank_v3(bt: bytes) -> dict:
     return ret
 
 
+def parse_send_gift_v2(bt: bytes) -> dict:
+    """解析 SEND_GIFT_V2 的 protobuf 数据
+
+    Args:
+        bt (bytes): protobuf 原始字节
+
+    Returns:
+        dict: 解析后的礼物信息
+    """
+
+    def skip_field(reader: BytesReader, wire_type: int) -> None:
+        """按 wire type 跳过未知字段。
+
+        Args:
+            reader (BytesReader): 字节流读取器
+            wire_type (int): protobuf wire type
+        """
+        if wire_type == 0:
+            reader.varint()
+        elif wire_type == 1:
+            reader.fixed64()
+        elif wire_type == 2:
+            reader.bytes_string()
+        elif wire_type == 5:
+            reader.fixed32()
+        else:
+            raise ValueError(f"不支持的 protobuf wire type: {wire_type}")
+
+    def parse_gift_info(bt2: bytes) -> str:
+        """解析 gift_info，仅取 img_basic。
+
+        Args:
+            bt2 (bytes): gift_info 的 protobuf 原始字节
+
+        Returns:
+            str: 礼物图片地址
+        """
+        img_basic = ""
+        br2 = BytesReader(stream=bt2)
+        while not br2.has_end():
+            key2 = br2.varint()
+            field2, wire2 = key2 >> 3, key2 & 7
+            if field2 == 1 and wire2 == 2:
+                img_basic = br2.string()
+            else:
+                skip_field(br2, wire2)
+        return img_basic
+
+    def parse_gift_item(bt3: bytes) -> dict:
+        """解析 gift_list 中的单个礼物。
+
+        Args:
+            bt3 (bytes): 礼物 item 的 protobuf 原始字节
+
+        Returns:
+            dict: 礼物信息
+        """
+        item = {
+            "gift_id": 0,
+            "gift_name": "",
+            "num": 0,
+            "gift_type": 0,
+            "price": 0,
+            "total_coin": 0,
+            "coin_type": "",
+            "tid": "",
+            "timestamp": 0,
+            "rnd": "",
+            "action": "",
+            "img_basic": "",
+        }
+        br3 = BytesReader(stream=bt3)
+        while not br3.has_end():
+            key3 = br3.varint()
+            field3, wire3 = key3 >> 3, key3 & 7
+            if field3 == 1 and wire3 == 0:
+                item["gift_id"] = br3.varint()
+            elif field3 == 2 and wire3 == 2:
+                item["gift_name"] = br3.string()
+            elif field3 == 3 and wire3 == 0:
+                item["num"] = br3.varint()
+            elif field3 == 4 and wire3 == 0:
+                item["gift_type"] = br3.varint()
+            elif field3 == 5 and wire3 == 0:
+                item["price"] = br3.varint()
+            elif field3 == 7 and wire3 == 0:
+                item["total_coin"] = br3.varint()
+            elif field3 == 8 and wire3 == 2:
+                item["coin_type"] = br3.string()
+            elif field3 == 9 and wire3 == 2:
+                item["tid"] = br3.string()
+            elif field3 == 10 and wire3 == 0:
+                item["timestamp"] = br3.varint()
+            elif field3 == 12 and wire3 == 2:
+                item["rnd"] = br3.string()
+            elif field3 == 18 and wire3 == 2:
+                item["action"] = br3.string()
+            elif field3 == 35 and wire3 == 2:
+                item["img_basic"] = parse_gift_info(br3.bytes_string())
+            else:
+                skip_field(br3, wire3)
+        return item
+
+    def parse_medal_info(bt4: bytes) -> dict:
+        """解析 medal_info。
+
+        Args:
+            bt4 (bytes): medal_info 的 protobuf 原始字节
+
+        Returns:
+            dict: 粉丝勋章信息
+        """
+        medal_info = {
+            "target_id": 0,
+            "anchor_roomid": 0,
+            "medal_level": 0,
+            "medal_name": "",
+        }
+        br4 = BytesReader(stream=bt4)
+        while not br4.has_end():
+            key4 = br4.varint()
+            field4, wire4 = key4 >> 3, key4 & 7
+            if field4 == 1 and wire4 == 0:
+                medal_info["target_id"] = br4.varint()
+            elif field4 == 4 and wire4 == 0:
+                medal_info["anchor_roomid"] = br4.varint()
+            elif field4 == 5 and wire4 == 0:
+                medal_info["medal_level"] = br4.varint()
+            elif field4 == 6 and wire4 == 2:
+                medal_info["medal_name"] = br4.string()
+            else:
+                skip_field(br4, wire4)
+        return medal_info
+
+    def parse_blind_gift(bt5: bytes) -> dict:
+        """解析 blind_gift。
+
+        Args:
+            bt5 (bytes): blind_gift 的 protobuf 原始字节
+
+        Returns:
+            dict: 盲盒礼物信息
+        """
+        blind_gift = {"original_gift_name": "", "original_gift_price": 0}
+        br5 = BytesReader(stream=bt5)
+        while not br5.has_end():
+            key5 = br5.varint()
+            field5, wire5 = key5 >> 3, key5 & 7
+            if field5 == 3 and wire5 == 2:
+                blind_gift["original_gift_name"] = br5.string()
+            elif field5 == 6 and wire5 == 0:
+                blind_gift["original_gift_price"] = br5.varint()
+            else:
+                skip_field(br5, wire5)
+        return blind_gift
+
+    ret = {
+        "uid": 0,
+        "uname": "",
+        "face": "",
+        "guard_level": 0,
+        "medal_info": {
+            "target_id": 0,
+            "anchor_roomid": 0,
+            "medal_level": 0,
+            "medal_name": "",
+        },
+        "blind_gift": {"original_gift_name": "", "original_gift_price": 0},
+        "gift_list": [],
+    }
+    br = BytesReader(stream=bt)
+    while not br.has_end():
+        key = br.varint()
+        field, wire = key >> 3, key & 7
+        if field == 1 and wire == 0:
+            ret["uid"] = br.varint()
+        elif field == 2 and wire == 2:
+            ret["uname"] = br.string()
+        elif field == 3 and wire == 2:
+            ret["face"] = br.string()
+        elif field == 5 and wire == 0:
+            ret["guard_level"] = br.varint()
+        elif field == 8 and wire == 2:
+            ret["medal_info"] = parse_medal_info(br.bytes_string())
+        elif field == 9 and wire == 2:
+            ret["blind_gift"] = parse_blind_gift(br.bytes_string())
+        elif field == 10 and wire == 2:
+            ret["gift_list"].append(parse_gift_item(br.bytes_string()))
+        else:
+            skip_field(br, wire)
+    return ret
+
+
 class LiveDanmaku(AsyncEvent):
     """
     Websocket 实时获取直播弹幕
@@ -1250,7 +1443,7 @@ class LiveDanmaku(AsyncEvent):
 
     Events:
     + DANMU_MSG: 用户发送弹幕
-    + SEND_GIFT: 礼物
+    + SEND_GIFT: 礼物（同时覆盖旧 JSON 与 V2 protobuf，V2 会被拆成多条旧格式事件，带 is_v2 标记）
     + COMBO_SEND: 礼物连击
     + GUARD_BUY: 续费大航海
     + SUPER_CHAT_MESSAGE: 醒目留言(SC)
@@ -1653,6 +1846,53 @@ class LiveDanmaku(AsyncEvent):
                         "pb_decoded": pb_decoded,
                         "pb_decode_message": pb_decode_status,
                     }
+
+                if callback_info["type"] == "SEND_GIFT_V2":
+                    gift_data = info["data"]["data"]
+                    pb = gift_data.get("pb")
+                    if pb is None:
+                        pb = (gift_data.get("data") or {}).get("pb")
+                    if pb is None:
+                        self.logger.warning("SEND_GIFT_V2 缺少 pb 字段，已跳过")
+                        continue
+                    try:
+                        pb_decoded = parse_send_gift_v2(base64.b64decode(pb))
+                    except Exception as e:
+                        self.logger.warning(f"SEND_GIFT_V2 解析失败，已跳过：{e}")
+                        continue
+                    for gift in pb_decoded["gift_list"]:
+                        gift_callback_info = {
+                            "room_display_id": callback_info["room_display_id"],
+                            "room_real_id": callback_info["room_real_id"],
+                            "type": "SEND_GIFT",
+                            "data": {
+                                "cmd": "SEND_GIFT",
+                                "data": {
+                                    "uid": pb_decoded["uid"],
+                                    "uname": pb_decoded["uname"],
+                                    "face": pb_decoded["face"],
+                                    "guard_level": pb_decoded["guard_level"],
+                                    "giftId": gift["gift_id"],
+                                    "giftName": gift["gift_name"],
+                                    "num": gift["num"],
+                                    "gift_type": gift["gift_type"],
+                                    "price": gift["price"],
+                                    "total_coin": gift["total_coin"],
+                                    "coin_type": gift["coin_type"],
+                                    "tid": gift["tid"],
+                                    "timestamp": gift["timestamp"],
+                                    "rnd": gift["rnd"],
+                                    "action": gift["action"],
+                                    "img_basic": gift["img_basic"],
+                                    "medal_info": pb_decoded["medal_info"],
+                                    "blind_gift": pb_decoded["blind_gift"],
+                                    "is_v2": True,
+                                },
+                            },
+                        }
+                        self.dispatch("SEND_GIFT", gift_callback_info)
+                        self.dispatch("ALL", gift_callback_info)
+                    continue
 
                 callback_info["data"] = info["data"]
                 self.dispatch(callback_info["type"], callback_info)
